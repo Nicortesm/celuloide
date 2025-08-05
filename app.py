@@ -2,71 +2,84 @@ import streamlit as st
 import sqlite3, pandas as pd, json
 import openai
 
-# --- Configuración ---
-openai.api_key = st.secrets["OPENAI_API_KEY"]        # define tu clave en secrets
-DB_PATH = "phones.db"                                # base con los celulares
+# ---------- CONFIGURACIÓN ----------
+openai.api_key = st.secrets["OPENAI_API_KEY"]     # pon tu clave en Secrets
+DB_PATH = "phones.db"                             # base de datos del scraper
 
-st.set_page_config("Celuloide · Asistente de compra", "📱", layout="wide")
+st.set_page_config(page_title="Celuloide · Asistente de compra",
+                   page_icon="📱")
 
-# --- Estilos simples (fondo blanco, header azul) ---
-st.markdown("""
-<style>
-.stApp {background:#ffffff;}
-#header {background:#004a99;color:#fff;padding:14px;border-radius:6px;margin-bottom:1rem;}
-.big {font-size:1.5rem;font-weight:700;}
-.btn {background:#0066cc;color:#fff;padding:6px 12px;border:none;border-radius:4px;}
-</style>""", unsafe_allow_html=True)
-st.markdown('<div id="header"><span class="big">📱  Encuentra tu Celular Ideal</span></div>', unsafe_allow_html=True)
+# ---------- UI HEADER SENCILLO ----------
+st.markdown(
+    '<div style="background:#004a99;padding:14px;border-radius:6px;">'
+    '<span style="color:#fff;font-size:1.4rem;font-weight:700">'
+    '📱  Encuentra tu Celular Ideal</span></div>',
+    unsafe_allow_html=True)
 
-# --------- 1 · Mantener estado de la conversación -----------
+# ---------- PREGUNTAS PREDEFINIDAS ----------
+QUESTIONS = [
+    {"key": "budget",  "text": "¿Cuál es tu presupuesto máximo (COP)?",                "widget": "number"},
+    {"key": "brand",   "text": "¿Tienes una marca preferida? (opcional)",              "widget": "text"},
+    {"key": "usage",   "text": "¿Para qué usarás principalmente el celular?",          "widget": "select",
+     "options": ["Redes sociales", "Fotografía", "Juegos", "Trabajo/estudio", "Otro"]},
+    {"key": "camera",  "text": "¿Qué tan importante es la cámara?",                    "widget": "select",
+     "options": ["Poco", "Moderado", "Muy importante"]},
+    {"key": "storage", "text": "¿Cuánta memoria interna prefieres?",                   "widget": "select",
+     "options": ["64 GB o menos", "128 GB", "256 GB o más"]}
+]
+
+TOTAL_Q = len(QUESTIONS)
+
+# ---------- ESTADO DE SESIÓN ----------
 if "step" not in st.session_state:
     st.session_state.step = 0
     st.session_state.answers = {}
+    st.session_state.chat = [{"role": "assistant",
+                              "content": "¡Hola 👋! Soy Celuloide. "
+                                         "Te haré 5 preguntas para entender qué celular necesitas."}]
 
-questions = [
-    {"key": "budget", "label": "¿Cuál es tu presupuesto máximo (COP)?", "widget": "number"},
-    {"key": "brand", "label": "¿Tienes una marca preferida? (opcional)", "widget": "text"},
-    {"key": "usage", "label": "¿Para qué usarás principalmente el celular?", "widget": "select",
-     "options": ["Redes sociales", "Fotografía", "Juegos", "Trabajo/estudio", "Otro"]},
-    {"key": "camera", "label": "¿Qué tan importante es la cámara?", "widget": "select",
-     "options": ["Poco", "Moderado", "Muy importante"]},
-    {"key": "storage", "label": "¿Cuánta memoria interna prefieres?", "widget": "select",
-     "options": ["64 GB o menos", "128 GB", "256 GB o más"]},
-]
+# ---------- MOSTRAR HISTORIAL DE CHAT ----------
+for msg in st.session_state.chat:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
 step = st.session_state.step
 
-# --------- 2 · Mostrar la pregunta actual -----------
-if step < len(questions):
-    q = questions[step]
-    st.subheader(f"Pregunta {step+1} de {len(questions)}")
+# ---------- FLUJO DE PREGUNTAS ----------
+if step < TOTAL_Q:
+    q = QUESTIONS[step]
+    with st.chat_message("assistant"):
+        st.markdown(f"**Pregunta {step+1} de {TOTAL_Q}:** {q['text']}")
 
-    # Renderizar el widget adecuado
+    # Render del widget adecuado
     if q["widget"] == "number":
-        val = st.number_input(q["label"], min_value=0, step=100000)
+        ans = st.number_input("Tu respuesta:", min_value=0, step=500000,
+                              key=f"inp_{step}")
     elif q["widget"] == "text":
-        val = st.text_input(q["label"])
+        ans = st.text_input("Tu respuesta:", key=f"inp_{step}")
     elif q["widget"] == "select":
-        val = st.selectbox(q["label"], q["options"])
+        ans = st.selectbox("Tu respuesta:", q["options"], key=f"inp_{step}")
     else:
-        val = ""
+        ans = ""
 
-    if st.button("Siguiente", key=f"next_{step}", help="Guardar respuesta y continuar", type="primary"):
-        st.session_state.answers[q["key"]] = val
+    if st.button("Enviar respuesta", key=f"btn_{step}"):
+        st.session_state.answers[q["key"]] = ans
+        st.session_state.chat.append({"role": "user", "content": str(ans)})
         st.session_state.step += 1
         st.experimental_rerun()
 
-# --------- 3 · Todas las respuestas capturadas -> llamar GPT -----------
+# ---------- TODAS LAS RESPUESTAS CAPTURADAS ----------
 else:
-    st.subheader("🧠 Calculando la mejor recomendación…")
+    # Mostrar resumen
+    with st.chat_message("assistant"):
+        st.markdown("¡Gracias! Voy a procesar tus respuestas y buscar los mejores modelos para ti…")
 
-    # Prompt compacto para transformar respuestas en filtros numéricos
+    # Prompt a GPT para convertir respuestas -> filtros
     prompt = f"""
-Convierte el siguiente JSON de respuestas del usuario a filtros para una base de datos
-de celulares. Devuelve solo el objeto JSON con las claves:
-brand, max_price, min_storage, min_ram, min_camera_mp (usa None si no aplica).
+Convierte el siguiente JSON de respuestas en filtros para una base de datos
+de celulares. Devuelve **solo** el objeto JSON con estas claves:
+brand, max_price, min_storage, min_ram, min_camera_mp (usa null si no aplica).
 
-Respuestas:
 {json.dumps(st.session_state.answers, ensure_ascii=False)}
 """
     try:
@@ -75,49 +88,42 @@ Respuestas:
             messages=[{"role": "user", "content": prompt}],
             temperature=0)
         filters = json.loads(rsp.choices[0].message.content)
-
     except Exception as e:
-        st.error(f"Error al usar la API de OpenAI: {e}")
+        with st.chat_message("assistant"):
+            st.error(f"Error con la API: {e}")
         st.stop()
 
-    st.write("**Filtros calculados por IA:**")
-    st.json(filters)
-
-    # --------- 4 · Ejecutar la consulta SQL ---------
-    query = "SELECT name, url, price_cop, storage_gb, ram_gb, camera_mp FROM phones WHERE 1=1"
-    params = []
+    # Ejecutar la consulta
+    q_sql = "SELECT name, url, price_cop, storage_gb, ram_gb, camera_mp FROM phones WHERE 1=1"
+    p = []
     if filters.get("brand"):
-        query += " AND brand LIKE ?"
-        params.append(f"%{filters['brand']}%")
+        q_sql += " AND brand LIKE ?"; p.append(f"%{filters['brand']}%")
     if filters.get("max_price"):
-        query += " AND price_cop <= ?"
-        params.append(filters["max_price"])
+        q_sql += " AND price_cop <= ?"; p.append(filters["max_price"])
     if filters.get("min_storage"):
-        query += " AND storage_gb >= ?"
-        params.append(filters["min_storage"])
+        q_sql += " AND storage_gb >= ?"; p.append(filters["min_storage"])
     if filters.get("min_ram"):
-        query += " AND ram_gb >= ?"
-        params.append(filters["min_ram"])
+        q_sql += " AND ram_gb >= ?"; p.append(filters["min_ram"])
     if filters.get("min_camera_mp"):
-        query += " AND camera_mp >= ?"
-        params.append(filters["min_camera_mp"])
+        q_sql += " AND camera_mp >= ?"; p.append(filters["min_camera_mp"])
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(query, params).fetchmany(5)   # top-5
-    conn.close()
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    rows = conn.execute(q_sql, p).fetchmany(5); conn.close()
 
+    # Mostrar resultados
     if rows:
-        st.success(f"Encontré {len(rows)} opciones para ti:")
         df = pd.DataFrame(rows)
         df["Enlace"] = df["url"].apply(lambda u: f"[Ver]({u})")
-        st.dataframe(df.drop(columns=["url"]), use_container_width=True)
+        with st.chat_message("assistant"):
+            st.success(f"Encontré {len(df)} opciones que podrían interesarte:")
+            st.dataframe(df.drop(columns=["url"]), use_container_width=True)
     else:
-        st.info("No encontré celulares que cumplan con esos criterios. "
-                "Pulsa “Reiniciar” para intentar con otras respuestas.")
+        with st.chat_message("assistant"):
+            st.info("No encontré celulares con esos criterios. "
+                    "Pulsa *Reiniciar* para intentarlo de nuevo.")
 
     # Botón reiniciar
-    if st.button("🔄 Reiniciar"):
-        st.session_state.step = 0
-        st.session_state.answers = {}
+    if st.button("🔄 Reiniciar chat"):
+        for key in ("step", "answers", "chat"):
+            st.session_state.pop(key, None)
         st.experimental_rerun()
