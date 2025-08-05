@@ -4,17 +4,33 @@ import streamlit as st
 import openai
 import os
 
+# Configuración de API
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 DB_PATH = "phones.db"
 
 st.set_page_config(page_title="Celuloide: Encuentra tu Celular Ideal", page_icon="📱", layout="wide")
 
-st.markdown(\"\"\"<style>
-body, .stApp { background-color: #ffffff; color: #003366; }
-input, select, textarea { background-color: #f0f8ff; border: 1px solid #003366; color: #003366; }
-button { background-color: #0066cc; color: #ffffff; border-radius: 4px; }
-button:hover { background-color: #004a99; }
-</style>\"\"\", unsafe_allow_html=True)
+st.markdown("""
+    <style>
+    body, .stApp {
+        background-color: #ffffff;
+        color: #003366;
+    }
+    input, select, textarea {
+        background-color: #f0f8ff;
+        border: 1px solid #003366;
+        color: #003366;
+    }
+    button {
+        background-color: #0066cc;
+        color: #ffffff;
+        border-radius: 4px;
+    }
+    button:hover {
+        background-color: #004a99;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 st.title("📱 Encuentra tu Celular Ideal con IA")
 st.write("Describe lo que buscas en un celular como si estuvieras hablando con una persona:")
@@ -37,18 +53,16 @@ Tu tarea es convertir lo que diga el usuario en un filtro JSON con estas claves:
 - min_camera_mp (en megapíxeles, opcional)
 
 Ejemplo de respuesta:
-
-{{
+{
   "brand": "Samsung",
   "max_price": 2000000,
   "min_storage": 128,
   "min_ram": 6,
   "min_camera_mp": 48
-}}
+}
 
 Ahora convierte esta petición:
-
-\"\"\"{user_input}\"\"\"
+"""{user_input}"""
 """
 
         try:
