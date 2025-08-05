@@ -2,8 +2,5 @@ requests
 beautifulsoup4
 pandas
 streamlit
-openai==0.28.1
+openai>=1.13.3
 tenacity
-
-
-
