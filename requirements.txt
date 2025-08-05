@@ -3,5 +3,7 @@ beautifulsoup4
 pandas
 streamlit
 openai==0.28.1
+tenacity
+
 
 
